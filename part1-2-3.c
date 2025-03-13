@@ -436,7 +436,93 @@ Automate concatenationAutomates(const Automate *a1, const Automate *a2) {
 
     return result;
 }
+Automate supprimerEpsilonTransitions(Automate automate) {
+    Automate sansEpsilon;
+    memcpy(&sansEpsilon, &automate, sizeof(Automate)); // Copie de l'automate
+    sansEpsilon.nbTransitions = 0; // Réinitialisation du nombre de transitions
 
+    // Tableau pour marquer les états atteignables
+    bool atteignable[MAX_ETATS] = {false};
+
+    // Marquer les états initiaux comme atteignables
+    printf(ANSI_COLOR_YELLOW "États initiaux :\n" ANSI_COLOR_RESET);
+    for (int i = 0; i < automate.nbEtats; i++) {
+        if (automate.etats[i].estInitial) {
+            atteignable[automate.etats[i].id] = true;
+            printf("État %d marqué comme atteignable (initial)\n", automate.etats[i].id);
+        }
+    }
+
+    // Étape 1 : Élimination des transitions epsilon
+    printf(ANSI_COLOR_YELLOW "\nÉlimination des transitions epsilon :\n" ANSI_COLOR_RESET);
+    for (int i = 0; i < automate.nbTransitions; i++) {
+        if (automate.transitions[i].symbole != 'e') {
+            // Copier la transition si ce n'est pas une transition epsilon
+            sansEpsilon.transitions[sansEpsilon.nbTransitions++] = automate.transitions[i];
+            // Marquer l'état d'arrivée comme atteignable
+            atteignable[automate.transitions[i].etatArrivee] = true;
+            printf("Transition copiée : %d --(%c)--> %d\n",
+                   automate.transitions[i].etatDepart,
+                   automate.transitions[i].symbole,
+                   automate.transitions[i].etatArrivee);
+        } else {
+            printf("Transition epsilon ignorée : %d --(e)--> %d\n",
+                   automate.transitions[i].etatDepart,
+                   automate.transitions[i].etatArrivee);
+        }
+    }
+
+    // Étape 2 : Ajouter les transitions indirectes via epsilon
+    printf(ANSI_COLOR_YELLOW "\nAjout des transitions indirectes via epsilon :\n" ANSI_COLOR_RESET);
+    for (int i = 0; i < automate.nbTransitions; i++) {
+        if (automate.transitions[i].symbole == 'e') {
+            // Si l'état de départ est atteignable, marquer l'état d'arrivée comme atteignable
+            if (atteignable[automate.transitions[i].etatDepart]) {
+                atteignable[automate.transitions[i].etatArrivee] = true;
+                printf("État %d marqué comme atteignable (via epsilon de %d)\n",
+                       automate.transitions[i].etatArrivee,
+                       automate.transitions[i].etatDepart);
+            }
+        }
+    }
+
+    // Étape 3 : Suppression des transitions impliquant des états inatteignables
+    printf(ANSI_COLOR_YELLOW "\nSuppression des transitions inatteignables :\n" ANSI_COLOR_RESET);
+    int nbTransitionsSansInatteignables = 0;
+    for (int i = 0; i < sansEpsilon.nbTransitions; i++) {
+        if (atteignable[sansEpsilon.transitions[i].etatDepart] && atteignable[sansEpsilon.transitions[i].etatArrivee]) {
+            // Conserver la transition si les états de départ et d'arrivée sont atteignables
+            sansEpsilon.transitions[nbTransitionsSansInatteignables++] = sansEpsilon.transitions[i];
+            printf("Transition conservée : %d --(%c)--> %d\n",
+                   sansEpsilon.transitions[i].etatDepart,
+                   sansEpsilon.transitions[i].symbole,
+                   sansEpsilon.transitions[i].etatArrivee);
+        } else {
+            printf("Transition supprimée : %d --(%c)--> %d\n",
+                   sansEpsilon.transitions[i].etatDepart,
+                   sansEpsilon.transitions[i].symbole,
+                   sansEpsilon.transitions[i].etatArrivee);
+        }
+    }
+    sansEpsilon.nbTransitions = nbTransitionsSansInatteignables;
+
+    // Étape 4 : Mise à jour des états finaux
+    printf(ANSI_COLOR_YELLOW "\nMise à jour des états finaux :\n" ANSI_COLOR_RESET);
+    for (int i = 0; i < automate.nbEtats; i++) {
+        if (automate.etats[i].estFinal && atteignable[automate.etats[i].id]) {
+            sansEpsilon.etats[i].estFinal = 1; // Conserver l'état final s'il est atteignable
+            printf("État final conservé : %d\n", automate.etats[i].id);
+        } else {
+            sansEpsilon.etats[i].estFinal = 0; // Sinon, le marquer comme non final
+            printf("État final supprimé : %d\n", automate.etats[i].id);
+        }
+    }
+
+    
+
+    return sansEpsilon;
+
+}
 // Fonction pour afficher le menu et gérer les choix
 void menu() {
     Automate automate, automate1, automate2, result;
@@ -458,7 +544,8 @@ void menu() {
         printf("8. Lire un fichier .txt contenant une liste de mots et afficher ceux qui sont acceptés\n" ANSI_COLOR_RESET);
         printf("9. Concaténation de deux automates\n" ANSI_COLOR_RESET);
         printf("10. Union de deux automates\n" ANSI_COLOR_RESET);
-        printf("11. Quitter\n" ANSI_COLOR_RESET);
+        printf("11. Suppression des transitions epsilon \n" ANSI_COLOR_RESET);
+        printf("12. Quitter\n" ANSI_COLOR_RESET);
         printf(ANSI_COLOR_YELLOW "Choix : " ANSI_COLOR_RESET);
         scanf("%d", &choix);
 
@@ -533,13 +620,36 @@ void menu() {
                 scanf("%s", nomFichier);
                 enregistrerAutomateDot(&result, nomFichier);
                 break;
+            
             case 11:
+    printf(ANSI_COLOR_CYAN "Nom du fichier : " ANSI_COLOR_RESET);
+    scanf("%s", nomFichier);
+
+    // Charger l'automate depuis le fichier .dot
+    chargerAutomateDot(&automate, nomFichier);
+
+    // Supprimer les transitions epsilon et récupérer l'automate modifié
+    Automate automateModifie = supprimerEpsilonTransitions(automate);
+
+    // Afficher l'automate modifié pour vérification
+    printf(ANSI_COLOR_GREEN "Automate après suppression des transitions epsilon :\n" ANSI_COLOR_RESET);
+    afficherAutomate(&automateModifie);
+
+    // Demander le nom du fichier pour enregistrer l'automate modifié
+    printf(ANSI_COLOR_CYAN "Entrez le nom du fichier .dot pour enregistrer l'automate résultant : " ANSI_COLOR_RESET);
+    scanf("%s", nomFichier);
+
+    // Enregistrer l'automate modifié dans le fichier .dot
+    enregistrerAutomateDot(&automateModifie, nomFichier);
+    break;
+            case 12:
                 printf(ANSI_COLOR_RED "Au revoir !\n" ANSI_COLOR_RESET);
                 break;
+          
             default:
                 printf(ANSI_COLOR_RED "Choix invalide, veuillez réessayer.\n" ANSI_COLOR_RESET);
         }
-    } while (choix != 11);
+    } while (choix != 12);
 }
 
 // Fonction principale
